@@ -54,6 +54,7 @@ class Board():
 
         #7 History for the board
         matrix.append(self.history)
+        return matrix
 
     def get_attacked_squares(self, color):
         attacked = chess.SquareSet()
@@ -79,7 +80,6 @@ class Board():
                             self.get_attacked_squares(chess.BLACK)]))
         if len(self.history) > 8:
             self.history.pop(0)
-        print(len(self.history))
         self.board.push_san(move)
 
     def numpy_to_fen(self, numpy_board):    
