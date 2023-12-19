@@ -4,13 +4,13 @@ Train a similar 0 knowldge chess engine
 
 
 * Establish board
-    Pieces:
-    King
-    Queen
-    Rook
-    Bishop
-    Knight
-    Pawn
+    * Pieces:
+    * King
+    * Queen
+    * Rook
+    * Bishop
+    * Knight
+    * Pawn
 
 TO DO:
 My representation:
@@ -23,6 +23,7 @@ Casteling x 4 done
 En Passant done
 
 Need to design value net ie. the one to judge and reduce the search tree 
+thinking of utilising resnet block for evaluation
 Approaches:
 CNNs with ReLU Activation
 (Need to check other agents)
