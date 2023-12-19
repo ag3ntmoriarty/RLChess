@@ -8,7 +8,7 @@ class Board():
         else:
             self.board = board
         
-        self.history = []
+        self.history = [np.zeros(64, np.uint8)]*8
 
     def board_to_input(self):
         """Define different states for each piece.

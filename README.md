@@ -20,7 +20,7 @@ Black done
 Attackers x 2 done
 History(no idea how yet)(past 8 frames) done
 Casteling x 4 done
-En Passant 
+En Passant done
 
 
 
