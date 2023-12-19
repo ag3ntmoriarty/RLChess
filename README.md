@@ -22,11 +22,13 @@ History(no idea how yet)(past 8 frames) done
 Casteling x 4 done
 En Passant done
 
+Need to design value net ie. the one to judge and reduce the search tree 
+Approaches:
+CNNs with ReLU Activation
+(Need to check other agents)
+The input size is variable at this point need to refine to either 64xn or 8x8xn
 
 
-
-Using alphago's representation of board position but may lead to memory overflow
-Current board size = 8x8x(12*8+8)
 
 * Make a search tree for games possible combinations
 * Reduce search tree with neural net (Value Net).. V = f(board)

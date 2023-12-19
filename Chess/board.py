@@ -21,7 +21,6 @@ class Board():
             Casteling x 4 done
             En Passant done """
         
-        
         matrix = []        
         #1 turn representation
         matrix.append(np.ones(64, np.uint8) if self.board.turn else np.zeros(64, np.uint8))
@@ -30,29 +29,24 @@ class Board():
         matrix.append(self.get_numpy_representation(chess.WHITE))
         matrix.append(self.get_numpy_representation(chess.BLACK))
         
-        #4 Attckers representation 
+        #3 Attckers representation 
         matrix.append(self.get_attacked_squares(chess.WHITE))
         matrix.append(self.get_attacked_squares(chess.BLACK))
 
-        #5 castling representation for each ie. 4x64
-        castle = np.asarray(
-            [np.ones(64, np.uint8) if self.board.has_kingside_castling_rights(chess.WHITE) else np.zeros(64, np.uint8),
-            np.ones(64, np.uint8) if self.board.has_queenside_castling_rights(chess.WHITE) else np.zeros(64, np.uint8),
-            np.ones(64, np.uint8) if self.board.has_kingside_castling_rights(chess.BLACK) else np.zeros(64, np.uint8),
-            np.ones(64, np.uint8) if self.board.has_queenside_castling_rights(chess.BLACK) else np.zeros(64, np.uint8)], 
-            np.uint8)
-        matrix.append(castle)
-        del castle
-        
-        
-        #6 En passant 
+        #4 castling representation for each ie. 4x64
+        matrix.append(np.ones(64, np.uint8) if self.board.has_kingside_castling_rights(chess.WHITE) else np.zeros(64, np.uint8))
+        matrix.append(np.ones(64, np.uint8) if self.board.has_queenside_castling_rights(chess.WHITE) else np.zeros(64, np.uint8))
+        matrix.append(np.ones(64, np.uint8) if self.board.has_kingside_castling_rights(chess.BLACK) else np.zeros(64, np.uint8))
+        matrix.append(np.ones(64, np.uint8) if self.board.has_queenside_castling_rights(chess.BLACK) else np.zeros(64, np.uint8))
+
+        #5 En passant 
         en_passant = np.zeros(64, np.uint8)
         if self.board.ep_square is not None:
             en_passant[self.board.ep_square] = 1
         matrix.append(en_passant)
         del en_passant
 
-        #7 History for the board
+        #6 History for the board
         matrix.append(self.history)
         return matrix
 
@@ -87,4 +81,5 @@ class Board():
 
     def get_legal_moves(self):
         pass
+
 
