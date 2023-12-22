@@ -22,10 +22,17 @@ History(no idea how yet)(past 8 frames) done
 Casteling x 4 done
 En Passant done
 
+Value Net:
 Need to design value net ie. the one to judge and reduce the search tree 
 thinking of utilising resnet block for evaluation
 Approaches:
 CNNs with ReLU Activation
+
+Policy Net:
+AlphaGo- Uses a policy net(cnv2d and relu) to predict human actions in game using random state action pair if humans (approach 1)
+
+Used RL Policy training with approach 1 model and weights to do self play and improve play prediction. weight updated based on the policy gradient * outcome of the game
+
 (Need to check other agents)
 The input size is variable at this point need to refine to either 64xn or 8x8xn
 

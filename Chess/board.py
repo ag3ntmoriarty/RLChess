@@ -19,7 +19,8 @@ class Board():
             Attackers x 2 done
             History(no idea how yet)(past 8 frames) done
             Casteling x 4 done
-            En Passant done """
+            En Passant done 
+        """
         
         matrix = []        
         #1 turn representation
