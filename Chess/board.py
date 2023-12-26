@@ -53,7 +53,7 @@ class Board():
         for i in self.history:
             for j in i:
                 matrix.append(j)
-        return np.stack(matrix)
+        return np.reshape(np.array(matrix), (42,64,1))
 
     def get_attacked_squares(self, color):
         attacked = chess.SquareSet()
