@@ -13,26 +13,26 @@ Train a similar 0 knowldge chess engine
     * Pawn
 
 TO DO:
-My representation:
-Turn done
-White done
-Black done
-Attackers x 2 done
-History(no idea how yet)(past 8 frames) done
-Casteling x 4 done
-En Passant done
-
 Value Net:
 Need to design value net ie. the one to judge and reduce the search tree 
 thinking of utilising resnet block for evaluation
 Approaches:
 CNNs with ReLU Activation
 
+Thinking of combining the policy and value net in 1 model can do that in pytorch but need to shorten the model to get better performance.
+
 Policy Net:
+override LegalMoveGenerator to ge list
+
+Need to find way to get a net where the number of output changes wrt the legal moves on board the output size used is 8x8x73 ()
+
 AlphaGo- Uses a policy net(cnv2d and relu) to predict human actions in game using random state action pair if humans (approach 1)
 
 Used RL Policy training with approach 1 model and weights to do self play and improve play prediction. weight updated based on the policy gradient * outcome of the game
 
+implementd value and policy net in the same model in a reconstructin of the alphago paper chess deep rl on github
+
+store multiple model in one pth file.
 (Need to check other agents)
 The input size is variable at this point need to refine to either 64xn or 8x8xn
 
