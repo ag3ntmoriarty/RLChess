@@ -8,7 +8,7 @@ class Board():
         else:
             self.board = board
         
-        self.history = [np.zeros(64, np.uint8)]*8
+        self.history = [np.zeros((4,64), np.uint8)]*8
 
     def board_to_input(self):
         """Define different states for each piece.
@@ -20,6 +20,8 @@ class Board():
             History(no idea how yet)(past 8 frames) done
             Casteling x 4 done
             En Passant done 
+
+            Matrix size: 42x64
         """
         
         matrix = []        
@@ -48,8 +50,10 @@ class Board():
         del en_passant
 
         #6 History for the board
-        matrix.append(self.history)
-        return matrix
+        for i in self.history:
+            for j in i:
+                matrix.append(j)
+        return np.stack(matrix)
 
     def get_attacked_squares(self, color):
         attacked = chess.SquareSet()
