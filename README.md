@@ -37,6 +37,13 @@ store multiple model in one pth file.
 The input size is variable at this point need to refine to either 64xn or 8x8xn
 
 
+Game Tree expansion:
+approach 1: MCTS
+better for assymetric expansion and better for time based move making as in case of games
+
+
+approach 2: ALPHA BETA (for trees with lower branching factor)
+
 
 * Make a search tree for games possible combinations
 * Reduce search tree with neural net (Value Net).. V = f(board)

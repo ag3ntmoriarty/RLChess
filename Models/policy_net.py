@@ -9,7 +9,7 @@ class PolicyNet(nn.Module):
 
     INPUTS:
     
-        input_size: 64x18x1
+        input_size: 64x42x1
         
         output_size: 64x72x1
     

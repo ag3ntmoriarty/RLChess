@@ -10,7 +10,7 @@ class RLModel(nn.Module):
 
     INPUTS:
 
-        input_size: [64x18x1, 64x10x1]
+        input_size: [64x42x1, 64x10x1]
     
         output_size: [64x72x1, 1]
         
