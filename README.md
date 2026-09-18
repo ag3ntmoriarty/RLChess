@@ -144,87 +144,84 @@ Useful for evaluating whether a later checkpoint is objectively stronger. Log sa
 
 ## Development Log
 
-This section documents the key observations made during development and the corresponding fixes applied. It serves as a record of the iterative debugging process that shaped the final agent.
+This is a record of how this project evolved — the things I noticed while watching the agent play, the bugs I tracked down, and the fixes that actually moved the needle.
 
 ### Phase 1: Initial Implementation
 
-The project started as an incomplete skeleton with stubbed-out MCTS functions and basic Conv2d neural networks. The initial work completed:
-- Implemented missing MCTS functions (`expand`, `backpropagation`) with AlphaZero PUCT formula
-- Fixed neural network input dimensions to accept the `(42, 8, 8)` board tensor
-- Fixed board encoding to output `float32` (was using integers, causing overflow with negative piece values)
-- Created CLI gameplay (`main.py`), RL training loop (`train.py`), and self-play logger (`play_self.py`)
-- Added TensorBoard integration and GPU auto-detection (CUDA / MPS / CPU)
+I started this project a while back wanting to build an AlphaZero-style chess engine from scratch. I had the skeleton in place — board representation, neural network stubs, a half-written MCTS — but nothing actually worked end to end. The first task was just getting it to run:
+- I filled in the missing MCTS functions (`expand`, `backpropagation`) and wired up the AlphaZero PUCT formula
+- Fixed the neural network input dimensions — they were expecting flat vectors but the board encoding produces a `(42, 8, 8)` spatial tensor
+- The board encoding was using integer dtypes, which silently overflowed when encoding negative piece values. Switched to `float32`
+- Built out the CLI (`main.py`) so I could actually sit down and play against the thing, plus a training loop (`train.py`) and a self-play logger (`play_self.py`)
+- Added TensorBoard so I could watch training metrics, and auto-detection for CUDA / MPS / CPU
+
+At this point the agent played, but its moves were essentially random.
 
 ### Phase 2: Architecture Upgrade
 
-**Observation**: *"The agent seems to be pretty stupid"* — the simple Conv2d architecture couldn't capture long-range dependencies across the board (e.g., a Bishop on a1 threatening h8).
+After playing a few games against it, my observation was blunt: **the agent was pretty stupid.** It had no sense of long-range threats — it couldn't see that a Bishop on a1 was threatening something on h8, for example. The simple Conv2d architecture just didn't have the receptive field for it.
 
-**Changes**:
-- Replaced Conv2d blocks with a **10-layer Transformer Encoder** (d_model=512, 8 heads) treating the 64 squares as sequence tokens — similar to Vision Transformers
-- Unified the Policy and Value networks to share the Transformer backbone (matching true AlphaZero methodology)
-- Scaled up to ~30M parameters for the RTX 3080
-- Added reward shaping for capturing undefended pieces (+0.1) and moving to defended squares (+0.05)
+So I replaced the entire neural network backbone:
+- Swapped the Conv2d blocks for a **10-layer Transformer Encoder** (d_model=512, 8 attention heads), treating the 64 board squares as sequence tokens — basically a Vision Transformer for chess
+- Unified the Policy and Value networks to share this backbone, branching only at the final linear heads. This is what AlphaZero actually does and it's much more parameter-efficient
+- Scaled the model up to ~30M parameters since I have an RTX 3080 on a desktop-cooled system and it can handle it
+- Added reward shaping to give the agent some chess intuition faster: +0.1 for capturing an undefended piece, +0.05 for moving to a square covered by a friendly piece
 
 ### Phase 3: Supervised Pre-Training
 
-**Observation**: *"Can I use some dataset to train?"* — pure self-play from random weights requires enormous compute.
+I realized that training purely from self-play with random weights would take an absurd amount of compute — this is how the original AlphaZero did it, but they had thousands of TPUs. I needed a shortcut.
 
-**Changes**:
-- Created `train_supervised.py` to pre-train on the KingBase2019 grandmaster dataset (1.5GB+ of PGN files)
-- Added error handling for corrupted PGN entries, garbage collection for memory management, and `utf-8` encoding fallbacks
-- Added epoch-level logging to track dataset coverage
+I downloaded the KingBase2019 dataset (millions of grandmaster games, 1.5GB+ of PGN files) and wrote `train_supervised.py` to pre-train the network on real human moves. The idea is to get the network to a baseline where it understands basic chess principles, and *then* switch to self-play to push it further.
+
+The dataset loading crashed a few times initially — some PGN files had corrupted entries or non-UTF8 characters in player names. I added try/except guards, forced `utf-8` encoding with error replacement, and sprinkled in `gc.collect()` calls to keep memory under control. Also added epoch-level logging so I could tell how far through the dataset I actually was.
 
 ### Phase 4: MCTS Hardening
 
-**Observation**: The agent was getting stuck in infinite move-repetition loops and showing extreme EV variance on repeated positions (0.93 vs -0.72 for the same position).
+After some training, I watched the agent play itself and noticed something weird: **it was getting stuck in infinite loops.** It would find a threatening move, the opponent would block, it would retreat, then play the exact same threat again. Over and over. The expected values were also wildly inconsistent — the same position would evaluate as 0.93 on one turn and -0.72 two moves later.
 
-**Root Causes Identified**:
-1. **No repetition detection inside MCTS** — the tree treated looping back to a previous position as free value instead of scoring it as a draw
-2. **History amnesia** — MCTS was initialized from a FEN string on every turn, wiping the 8-move history queue. The neural network saw empty history planes every single move
-3. **Low simulation budget** — 30-50 simulations weren't enough to distinguish a real plan from a repeating threat
+I dug into this and found three overlapping problems:
+1. **No repetition detection inside the MCTS tree** — the search treated "loop back to a position I've seen before" as having real value instead of recognizing it as a draw
+2. **History amnesia** — I was initializing MCTS from a FEN string every turn, which wiped the 8-move history queue. The neural network was seeing zeroed-out history planes on every single move, so it had no concept of "I've been here before"
+3. **Simulation budget was way too low** — 30-50 simulations weren't enough to search past immediate threats and find actual plans
 
-**Changes**:
-- Refactored `Node` to hold a deep-copied `Board` object (with full move stack) instead of a FEN string — `python-chess` natively detects threefold repetition and 50-move draws via `is_game_over(claim_draw=True)`
-- Added `Board.copy()` that preserves both the board state and the 8-move history queue
-- Raised default simulation budget to 400 across all scripts
-- Added Dirichlet noise and temperature-based exploration at root during self-play
+I fixed all three:
+- Refactored `Node` to carry a deep copy of the `Board` object (with full move stack) instead of just a FEN string. Now `python-chess` natively catches threefold repetition and 50-move draws
+- Added a proper `Board.copy()` that preserves both state and history
+- Cranked the simulation budget to 400 everywhere
 
-### Phase 5: Critical Bug Audit
+### Phase 5: The Big Bug Audit
 
-**Observation**: *"The agents are not performing well"* — even after architectural upgrades and dataset training, play quality remained poor.
+Even after all the architectural changes and dataset training, **the agent still wasn't performing well.** The moves looked slightly more reasonable than random, but it wasn't learning at the rate I expected. Something deeper was wrong.
 
-A systematic audit of every file revealed **8 issues**, 4 of which were outright crashers:
+I went through every single file line by line and found **8 issues** — and 4 of them were outright crashers that meant parts of the code had never actually worked:
 
-| # | Severity | Bug | Impact |
-|---|----------|-----|--------|
-| 1 | 🔴 Crash | `torch.softmax()` missing required `dim` argument | Policy head crashed at runtime |
-| 2 | 🔴 Crash | `board` variable referenced after rename to `b` | RL self-play crashed after every game |
-| 3 | 🔴 Crash | `chess.Board(mcts.root.state)` — state was a Board object, not a string | Policy extraction crashed |
-| 4 | 🔴 Silent | `[np.zeros(...)]*8` created 8 references to the **same** array | Network saw no history — always zeros |
-| 5 | 🟠 Design | MSE loss on 4672-dim one-hot policy target | Gradient drowned in 4671 zeros → random policy |
-| 6 | 🟠 Design | `from_sq*64 + to_sq` doesn't distinguish promotion types | Cannot learn to promote to Knight/Rook/Bishop |
-| 7 | 🟡 Logic | Terminal value signs inverted in MCTS expand | Agent learned to **lose** instead of win |
-| 8 | 🟡 Design | Sequential data feeding in supervised training | Catastrophic forgetting across opening systems |
+| # | Severity | What I Found | What It Meant |
+|---|----------|-------------|---------------|
+| 1 | 🔴 Crash | `torch.softmax()` was missing the required `dim` argument | The policy head literally could not produce output |
+| 2 | 🔴 Crash | A variable `board` was referenced but had been renamed to `b` | RL self-play crashed after finishing every game |
+| 3 | 🔴 Crash | `chess.Board(mcts.root.state)` — but `state` was now a Board object, not a string | Policy extraction crashed |
+| 4 | 🔴 Silent | `[np.zeros(...)]*8` creates 8 references to the **same** numpy array | The network was seeing empty history planes no matter what — it was playing with amnesia |
+| 5 | 🟠 Design | MSE loss on a 4672-dim one-hot policy target | The gradient from the single correct move was drowned out by 4671 zeros pushing everything to zero |
+| 6 | 🟠 Design | `from_sq*64 + to_sq` can't distinguish promotion types | Queen promotion, Knight promotion, Rook promotion — all mapped to the same index |
+| 7 | 🟡 Logic | Terminal value signs were inverted in the MCTS | The agent was literally **learning to lose** — checkmate was being scored as positive for the checkmated side |
+| 8 | 🟡 Design | Supervised training fed data sequentially by opening system | The network would overfit to the current ECO code, then forget everything when the next PGN file loaded |
 
-**Fixes Applied**:
-- **#1**: Policy head now outputs raw logits; softmax applied externally where needed
-- **#2**: Fixed `board` → `b.board.move_stack`
-- **#3**: Fixed `chess.Board(state)` → `state.board.legal_moves`
-- **#4**: Changed `[np.zeros(...)]*8` to `[np.zeros(...) for _ in range(8)]`
-- **#5**: Switched from `F.mse_loss` to `F.cross_entropy` (RL uses soft cross-entropy with MCTS visit distribution as target)
-- **#6**: Created `Chess/action_encoding.py` with dedicated slots for underpromotions (indices 4096–4239)
-- **#7**: Corrected terminal value sign convention in `mcts.py`
-- **#8**: Replaced sequential feeding with a 100k-position replay buffer using `random.sample()`
+Bug #4 was the sneakiest. Python's `[x]*8` doesn't create 8 independent copies — it creates 8 references to the *same* object. So when `push()` appended a new history frame, 7 out of 8 slots were still pointing to the original zeros. I'd been staring at the history code for a while before I caught it. One-line fix with massive impact.
+
+Bug #5 was the biggest quality improvement. Switching from MSE to cross-entropy for the policy loss meant the network could actually learn which move to play instead of just learning to output near-zero everywhere.
 
 ### Phase 6: Endgame Improvements
 
-**Observation**: *"The endgame is quite noisy"* and *"the pawn isn't promoting even when the square is undefended"*.
+With the bugs fixed, the games started looking genuinely reasonable through the opening and middlegame. But the **endgame was still noisy** — the agent would have a completely winning position with a King and Rook vs a lone King but couldn't find the mate. It would shuffle pieces around aimlessly.
 
-**Changes**:
-- Created `Chess/endgame_solver.py` — a deterministic alpha-beta search with iterative deepening that activates when ≤7 pieces remain
-- The solver uses MVV-LVA move ordering, king-cornering heuristics, and passed-pawn proximity bonuses
-- Added promotion reward shaping: +0.2 for any promotion, +0.1 extra for undefended promotion squares
-- Fixed promotion action encoding so all promotion types (Q/R/B/N) map to distinct network outputs
+I also noticed that **pawns weren't promoting** even when they had a clear path to the back rank with no defenders in the way. This was partly the action encoding issue (Bug #6 — the network couldn't distinguish promotion types) and partly that there was no incentive to promote.
+
+I made three changes:
+- Built a deterministic **alpha-beta endgame solver** (`Chess/endgame_solver.py`) that automatically takes over when ≤7 pieces remain on the board. It uses iterative deepening up to depth 20 with MVV-LVA move ordering, king-cornering heuristics, and passed-pawn bonuses. No neural network noise — just clean, exhaustive search that finds forced checkmates
+- Added **promotion reward shaping**: +0.2 for any promotion, +0.1 extra if the promotion square is undefended
+- Created a proper **action encoding module** (`Chess/action_encoding.py`) with dedicated index slots for underpromotions (Knight/Rook/Bishop), so the network can actually express a preference for promotion type
+
+The endgame solver was the single most satisfying addition. When it kicks in, you can see `[SOLVER]` in the logs, and the agent goes from aimless shuffling to precise, clinical mating sequences.
 
 ---
 
