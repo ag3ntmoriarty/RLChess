@@ -1,41 +1,16 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-
-class PolicyNet(nn.Module):
-    """
-    PolicyNet for predicting the value of a board
-
-    INPUTS:
+class PolicyHead(nn.Module):
+    def __init__(self, in_features, output_size):
+        super(PolicyHead, self).__init__()
+        self.fc1 = nn.Linear(in_features, 4096)
+        self.fc2 = nn.Linear(4096, output_size)
+        self.relu = nn.ReLU()
     
-        input_size: 64x42x1
-        
-        output_size: 64x72x1
-    
-    """
-    def __init__(self, input_size, output_size):
-        super(PolicyNet,self).__init__()
-        self.input_size = input_size
-        self.output_size = output_size
-
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.conv2 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)    
-        self.bn2 = nn.BatchNorm2d(128)  
-        self.conv3 = nn.Conv2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)    
-        self.bn3 = nn.BatchNorm2d(64)   
-        self.flatten = nn.Flatten()
-        self.linear1 = nn.Linear(73*8*8, 73*8*8)
-        self.linear2 = nn.Linear(73*8*8, self.output_size[0])
-    
-    def forward(self, input):
-        x = self.bn1(self.conv1(input))
-        x = F.relu(x)
-        x = self.bn2(self.conv2(x))
-        x = F.relu(x)
-        x = self.bn3(self.conv3(x))
-        x = self.flatten(x)
-        x = self.linear1(x)
-        x = F.sigmoid(self.linear2(x))
-        return x
+    def forward(self, x):
+        x = self.relu(self.fc1(x))
+        # Return raw logits — softmax is applied externally:
+        #   - During training: F.cross_entropy() applies log_softmax internally
+        #   - During inference (MCTS): we apply softmax explicitly where needed
+        return self.fc2(x)

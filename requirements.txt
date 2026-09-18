@@ -1,3 +1,5 @@
 python-chess
 zstandard
 numpy
+torch
+tensorboard
