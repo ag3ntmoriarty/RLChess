@@ -5,6 +5,7 @@ from MCTS.edge import Edge
 from MCTS.node import Node
 from MCTS import constant
 from Chess.board import Board
+from Chess.action_encoding import move_to_index
 
 class MCTS:
     def __init__(self, agent, state, stochastic=False):
@@ -77,10 +78,9 @@ class MCTS:
         if not legal_moves:
             return
 
-        # Simple fixed mapping for policy: from_square * 64 + to_square
-        # This gives a consistent unique index (up to 4096) for each move.
+        # Use shared action encoding for consistent mapping
         for move in legal_moves:
-            idx = move.from_square * 64 + move.to_square
+            idx = move_to_index(move)
             prob = policy[idx % len(policy)]
             child_state = leaf.step(move)
             child_node = Node(child_state)

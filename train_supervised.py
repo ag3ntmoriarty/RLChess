@@ -10,6 +10,7 @@ import glob
 from torch.utils.tensorboard import SummaryWriter
 from Models.net import RLModel
 from Chess.board import Board
+from Chess.action_encoding import move_to_index
 
 def process_game(game):
     """
@@ -33,7 +34,7 @@ def process_game(game):
         state_input = b.board_to_input()
         
         # Determine policy target as an integer index (for cross-entropy)
-        target_idx = (move.from_square * 64 + move.to_square) % 4672
+        target_idx = move_to_index(move)
         
         # Append from perspective of the player to move
         examples.append([state_input, target_idx, b.board.turn])

@@ -6,6 +6,7 @@ import argparse
 from Models.net import RLModel
 from MCTS.mcts import MCTS
 from Chess.board import Board
+from Chess.endgame_solver import is_endgame, solve_endgame
 
 def main():
     parser = argparse.ArgumentParser(description="Run Agent Self-Play")
@@ -59,17 +60,21 @@ def main():
         log_print(f"\n--- Move {move_count} ({'White' if b.board.turn == chess.WHITE else 'Black'} to play) ---")
         log_print(str(b.board))
         
-        # Initialize MCTS
-        mcts = MCTS(agent=model, state=b.copy(), stochastic=True) 
-        mcts.simulate(400) 
-        
-        # Get the best move based on visits
-        edges = mcts.root.edges
-        best_edge = max(edges, key=lambda e: e.N)
-        best_move = best_edge.action
-        
-        q_val = best_edge.W / best_edge.N if best_edge.N > 0 else 0
-        log_print(f"Agent chooses: {b.board.san(best_move)} (Visits: {best_edge.N}, Expected Value: {q_val:.3f})")
+        # Check if we should switch to the endgame solver
+        if is_endgame(b.board):
+            best_move, value, depth = solve_endgame(b.board)
+            log_print(f"[SOLVER] Agent chooses: {b.board.san(best_move)} (Depth: {depth}, Value: {value:.3f})")
+        else:
+            # Use MCTS
+            mcts = MCTS(agent=model, state=b.copy(), stochastic=True) 
+            mcts.simulate(400) 
+            
+            edges = mcts.root.edges
+            best_edge = max(edges, key=lambda e: e.N)
+            best_move = best_edge.action
+            
+            q_val = best_edge.W / best_edge.N if best_edge.N > 0 else 0
+            log_print(f"[MCTS] Agent chooses: {b.board.san(best_move)} (Visits: {best_edge.N}, EV: {q_val:.3f})")
         
         b.push(best_move)
         node = node.add_variation(best_move)

@@ -2,6 +2,11 @@
 
 An AlphaZero-inspired reinforcement learning chess engine built from scratch. Uses a **Transformer neural network** as the evaluation backbone, **Monte Carlo Tree Search (MCTS)** for move selection, and a deterministic **Alpha-Beta endgame solver** that takes over in simplified positions to force checkmate.
 
+## Sample Game
+![Sample Game](./media/lichess-game-Tq6OQwwC-white.gif)\
+White - 300000 episodes\
+Black - 700000 episodes
+
 ## Architecture
 
 ```
@@ -28,7 +33,7 @@ An AlphaZero-inspired reinforcement learning chess engine built from scratch. Us
            │                            │
            ▼                            ▼
 ┌──────────────────────┐  ┌──────────────────────────┐
-│     Policy Head      │  │       Value Head          │
+│     Policy Head      │  │       Value Head         │
 │  Linear(32768→4096)  │  │   Linear(32768→512)      │
 │  Linear(4096→4672)   │  │   Linear(512→1)          │
 │   → raw logits       │  │   → tanh ∈ [-1, 1]       │
@@ -189,7 +194,27 @@ I fixed all three:
 - Added a proper `Board.copy()` that preserves both state and history
 - Cranked the simulation budget to 400 everywhere
 
-### Phase 5: Endgame Improvements
+### Phase 5: The Big Bug Audit
+
+Even after all the architectural changes and dataset training, **the agent still wasn't performing well.** The moves looked slightly more reasonable than random, but it wasn't learning at the rate I expected. Something deeper was wrong.
+
+I went through every single file line by line. What I found was humbling — there were 8 separate issues, and 4 of them were hard crashes that meant parts of the code had literally never worked.
+
+The first thing I found was that `torch.softmax()` in the policy head was missing its required `dim` argument. This is a `TypeError` — the policy network couldn't even produce output. I have no idea how I missed this, but it meant that any training run that actually hit this code path would have crashed immediately. I fixed it by having the policy head output raw logits instead, and applying softmax externally only where needed.
+
+Next, I found a stale variable name. During an earlier refactor I had renamed `board` to `b` throughout the self-play function, but missed one line at the very end — `return training_data, reward, len(board.move_stack)`. This threw a `NameError` after every single game finished. Same kind of thing with `chess.Board(mcts.root.state)` — after the MCTS refactor, `state` was no longer a FEN string but a custom Board object, so passing it to `chess.Board()` would crash.
+
+Then I found the sneakiest bug of the whole project. The history initialization was `self.history = [np.zeros((4,64), np.float32)]*8`. In Python, `[x]*8` doesn't create 8 independent copies — it creates 8 references to the *same* object. So when `push()` appended a new history frame and popped the oldest, 7 out of 8 slots were still pointing to the original zeros. The neural network was seeing empty history planes on every move regardless of what had actually happened in the game. It was playing with complete amnesia. I'd been staring at the history code for a while before I caught this. One-line fix — change to a list comprehension — but massive impact.
+
+On the design side, the biggest problem was the loss function. I was using MSE loss on a 4672-dimensional one-hot policy target. Think about what that means: the target has a single `1.0` at the correct move index and `0.0` everywhere else. MSE computes the gradient for all 4672 outputs, and 4671 of them are pushing toward zero while only 1 is pushing toward one. The gradient from the correct move gets completely drowned out. The network learns to output near-zero everywhere, which is effectively a uniform random policy. Switching to cross-entropy loss was the single biggest quality improvement — suddenly the network could actually learn which move to play.
+
+I also found that the action encoding `from_square * 64 + to_square` couldn't distinguish between promotion types. A pawn push to e8 promoting to a Queen and the same push promoting to a Knight mapped to the exact same index. The network had no way to express a preference.
+
+The value signs in the MCTS were inverted too. In checkmate positions, the side that got checkmated was receiving a *positive* value. The agent was literally learning to lose.
+
+Finally, the supervised training was feeding data sequentially — all games from file `A00-A39.pgn`, then `A40-A79.pgn`, and so on. Since KingBase files are grouped by ECO opening code, the network would overfit to whatever opening system it was currently seeing, then catastrophically forget it when the next file loaded. I replaced this with a 100k-position replay buffer that samples randomly.
+
+### Phase 6: Endgame Improvements
 
 With the bugs fixed, the games started looking genuinely reasonable through the opening and middlegame. But the **endgame was still noisy** — the agent would have a completely winning position with a King and Rook vs a lone King but couldn't find the mate. It would shuffle pieces around aimlessly.
 

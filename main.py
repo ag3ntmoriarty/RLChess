@@ -6,6 +6,7 @@ import argparse
 from Models.net import RLModel
 from MCTS.mcts import MCTS
 from Chess.board import Board
+from Chess.endgame_solver import is_endgame, solve_endgame
 
 def get_best_move(mcts, n_simulations=100):
     mcts.simulate(n_simulations)
@@ -81,10 +82,16 @@ def main():
                         move = None
             b.push(move)
         else:
-            print("Agent is thinking...")
-            mcts = MCTS(agent=model, state=b.copy(), stochastic=False)
-            best_move = get_best_move(mcts, n_simulations=400) 
-            print(f"Agent plays: {b.board.san(best_move)}")
+            # Check if we should switch to the endgame solver
+            if is_endgame(b.board):
+                print("Agent is solving endgame (alpha-beta)...")
+                best_move, value, depth = solve_endgame(b.board)
+                print(f"Agent plays: {b.board.san(best_move)} (Solver depth: {depth}, Value: {value:.3f})")
+            else:
+                print("Agent is thinking (MCTS)...")
+                mcts = MCTS(agent=model, state=b.copy(), stochastic=False)
+                best_move = get_best_move(mcts, n_simulations=400) 
+                print(f"Agent plays: {b.board.san(best_move)}")
             b.push(best_move)
 
         is_user_turn = not is_user_turn
@@ -95,3 +102,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -10,6 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 from Models.net import RLModel
 from MCTS.mcts import MCTS
 from Chess.board import Board
+from Chess.action_encoding import move_to_index
 
 class ReplayBuffer:
     def __init__(self, capacity=10000):
@@ -33,28 +34,32 @@ def get_mcts_policy(mcts, temp=1.0):
     counts = np.array([edge.N for edge in edges])
     actions = [edge.action for edge in edges]
     
+    # Guard: if MCTS produced no edges (draw/terminal detected inside search),
+    # return a uniform policy over legal moves.
+    if len(edges) == 0:
+        legal_moves = list(mcts.root.state.board.legal_moves)
+        if not legal_moves:
+            return np.zeros(4672, dtype=np.float32), [], np.array([])
+        uniform = np.ones(len(legal_moves), dtype=np.float32) / len(legal_moves)
+        full_policy = np.zeros(4672, dtype=np.float32)
+        for move, p in zip(legal_moves, uniform):
+            full_policy[move_to_index(move) % 4672] = p
+        return full_policy, legal_moves, uniform
+    
     if temp == 0:
         best_idx = np.argmax(counts)
         probs = np.zeros(len(counts))
         probs[best_idx] = 1.0
     else:
-        counts = counts ** (1.0 / temp)
-        probs = counts / np.sum(counts)
+        counts_temp = counts ** (1.0 / temp)
+        total = np.sum(counts_temp)
+        probs = counts_temp / total if total > 0 else np.ones(len(counts)) / len(counts)
         
-    # Map back to full policy size (4672)
-    # Note: For simplicity, we just use the legal moves. 
-    # In a full implementation, this should map to the 73 planes of size 8x8.
     full_policy = np.zeros(4672, dtype=np.float32)
     
-    legal_moves = mcts.root.state.board.legal_moves
-    for move in legal_moves:
-        prob = 0.0
-        for idx, a in enumerate(actions):
-            if a == move:
-                prob = probs[idx]
-                break
-        move_idx = move.from_square * 64 + move.to_square
-        full_policy[move_idx % 4672] = prob
+    for idx, a in enumerate(actions):
+        move_idx = move_to_index(a)
+        full_policy[move_idx % 4672] = probs[idx]
         
     return full_policy, actions, probs
 
@@ -65,7 +70,7 @@ def self_play(model, num_simulations=50):
     b = Board() # Use custom board to maintain history across turns
     examples = []
     
-    while not b.board.is_game_over():
+    while not b.board.is_game_over(claim_draw=True) and len(b.board.move_stack) < 200:
         mcts = MCTS(agent=model, state=b.copy(), stochastic=True)
         mcts.simulate(num_simulations)
         
@@ -104,12 +109,20 @@ def self_play(model, num_simulations=50):
         friendly = not b_next.turn # The player who just moved
         if b_next.is_attacked_by(friendly, action.to_square):
             extra_reward += 0.05
+        
+        # 3. Bonus for pawn promotion
+        if action.promotion:
+            extra_reward += 0.2  # Strong incentive to promote
+            # Extra bonus if promoting to an undefended square (free promotion)
+            opponent = not b.board.turn
+            if not b.board.attackers(opponent, action.to_square):
+                extra_reward += 0.1
             
         examples.append([state_input, pi, b.board.turn, extra_reward])
         b.push(action) # Automatically updates history and pushes to board
         
     # Game over, determine reward
-    result = b.board.result()
+    result = b.board.result(claim_draw=True)
     if result == '1-0':
         reward = 1.0  # White wins
     elif result == '0-1':
@@ -184,7 +197,7 @@ def main():
     
     num_episodes = 100
     mcts_simulations = 400
-    batch_size = 256
+    batch_size = 128
     epochs = 20
     
     global_step = 0

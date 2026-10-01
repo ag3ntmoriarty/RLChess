@@ -3,3 +3,7 @@ KingBase
 *.pth
 runs
 runs/*
+arena_log.txt
+.gitignore
+__pycache__
+__pycache__/*
